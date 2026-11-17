@@ -1,0 +1,75 @@
+name: Build iOS IPA
+
+on:
+  push:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build (unsigned)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project FrameStudio.xcodeproj \
+            -scheme FrameStudio \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log | grep -E "error:|warning: .*deprecated|BUILD (SUCCEEDED|FAILED)" || true
+          test -d build/Build/Products/Release-iphoneos/FrameStudio.app
+
+      - name: Show errors
+        if: failure()
+        working-directory: ios
+        run: grep -E "error:" build.log | head -100 || true
+
+      - name: Package IPA
+        run: |
+          mkdir -p dist/Payload
+          cp -R ios/build/Build/Products/Release-iphoneos/FrameStudio.app dist/Payload/
+          cd dist
+          zip -qry FrameStudio-unsigned.ipa Payload
+          ls -lh FrameStudio-unsigned.ipa
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FrameStudio-unsigned-ipa
+          path: dist/FrameStudio-unsigned.ipa
+
+      - name: Publish to release "ipa-latest"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ipa-latest
+          name: 帧工坊 最新 IPA（未签名）
+          body: |
+            自动编译的未签名 IPA，下载后用你自己的证书签名安装。
+            分支：${{ github.ref_name }}，提交：${{ github.sha }}
+          prerelease: true
+          files: dist/FrameStudio-unsigned.ipa
