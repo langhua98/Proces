@@ -83,6 +83,13 @@ struct ProjectDetailView: View {
                         }
                         .buttonStyle(.bordered)
                     }
+                    // 文件选择器挂在这里，不和页面上的 sheet 放在同一个视图上，避免弹不出来
+                    .fileImporter(isPresented: $showFileImport, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
+                        switch result {
+                        case .success(let urls): importFromFiles(urls, project)
+                        case .failure(let error): message = error.localizedDescription
+                        }
+                    }
                 }
 
                 StepCard(title: "③ 合成视频", systemImage: "film") {
@@ -139,12 +146,6 @@ struct ProjectDetailView: View {
             guard !items.isEmpty else { return }
             importItems = []
             importFromPhotos(items, project)
-        }
-        .fileImporter(isPresented: $showFileImport, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
-            switch result {
-            case .success(let urls): importFromFiles(urls, project)
-            case .failure(let error): message = error.localizedDescription
-            }
         }
         .overlay {
             if let busy { BusyOverlay(text: busy) }
