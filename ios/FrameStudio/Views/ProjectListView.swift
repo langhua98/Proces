@@ -2,14 +2,18 @@ import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
 
+enum Route: Hashable {
+    case project(UUID)
+    case newProject(URL)
+}
+
 struct ProjectListView: View {
     @EnvironmentObject private var store: ProjectStore
     @State private var pickerItem: PhotosPickerItem?
     @State private var showFileImporter = false
-    @State private var pending: PendingVideo?
     @State private var loading = false
     @State private var message: String?
-    @State private var path: [UUID] = []
+    @State private var path: [Route] = []
 
     @State private var showPhotoPicker = false
 
@@ -37,7 +41,7 @@ struct ProjectListView: View {
                         }
                         Section("项目") {
                             ForEach(store.projects) { p in
-                                NavigationLink(value: p.id) { ProjectRow(project: p) }
+                                NavigationLink(value: Route.project(p.id)) { ProjectRow(project: p) }
                             }
                             .onDelete { offsets in
                                 let items = offsets.map { store.projects[$0] }
@@ -54,8 +58,16 @@ struct ProjectListView: View {
                 handleFileImport(result)
             }
             .navigationTitle("帧工坊")
-            .navigationDestination(for: UUID.self) { id in
-                ProjectDetailView(projectID: id)
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case .project(let id):
+                    ProjectDetailView(projectID: id)
+                case .newProject(let url):
+                    // 用页面跳转代替弹窗：选择器刚关闭时弹窗经常被系统丢掉
+                    NewProjectView(videoURL: url) { id in
+                        path = [.project(id)]
+                    }
+                }
             }
             .overlay {
                 if loading { BusyOverlay(text: "正在读取视频…") }
@@ -67,12 +79,6 @@ struct ProjectListView: View {
             guard let item else { return }
             pickerItem = nil
             loadVideo(item)
-        }
-        .sheet(item: $pending) { p in
-            NewProjectView(videoURL: p.url) { id in
-                path.append(id)
-            }
-            .environmentObject(store)
         }
         .errorAlert($message)
     }
@@ -97,6 +103,14 @@ struct ProjectListView: View {
         .controlSize(.large)
     }
 
+    private func openNewProject(_ url: URL) {
+        // 等选择器完全关闭后再跳转
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            path.append(.newProject(url))
+        }
+    }
+
     private func handleFileImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
@@ -107,7 +121,7 @@ struct ProjectListView: View {
                 .appendingPathComponent(UUID().uuidString + "." + (url.pathExtension.isEmpty ? "mov" : url.pathExtension))
             do {
                 try FileManager.default.copyItem(at: url, to: dest)
-                pending = PendingVideo(url: dest)
+                openNewProject(dest)
             } catch {
                 message = "读取视频失败：\(error.localizedDescription)"
             }
@@ -125,7 +139,7 @@ struct ProjectListView: View {
                     message = "无法读取这个视频"
                     return
                 }
-                pending = PendingVideo(url: movie.url)
+                openNewProject(movie.url)
             } catch {
                 message = "读取视频失败：\(error.localizedDescription)"
             }

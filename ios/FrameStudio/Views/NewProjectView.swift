@@ -43,7 +43,6 @@ struct NewProjectView: View {
     }
 
     var body: some View {
-        NavigationStack {
             Form {
                 Section("视频") {
                     if let info {
@@ -72,9 +71,21 @@ struct NewProjectView: View {
                 } footer: {
                     Text("智能抽帧：画面动得多的地方多抽、镜头切换处一定抽。合成时会自动用渐变补回中间的画面。")
                 }
-                if running {
-                    Section {
+                Section {
+                    if running {
                         ProgressView(value: progress) { Text(status).font(.footnote) }
+                    } else {
+                        Button {
+                            start()
+                        } label: {
+                            Label("开始拆帧", systemImage: "scissors")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .disabled(info == nil)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
                     }
                 }
                 if let errorText {
@@ -84,18 +95,15 @@ struct NewProjectView: View {
             .navigationTitle("新建项目")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") {
-                        task?.cancel()
-                        dismiss()
-                    }
-                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("开始拆帧") { start() }
                         .disabled(running || info == nil)
                 }
             }
-            .interactiveDismissDisabled(running)
+            .navigationBarBackButtonHidden(running)
+            .onDisappear {
+                if running { task?.cancel() }
+            }
             .task {
                 do {
                     info = try await VideoInfo.load(videoURL).0
@@ -103,7 +111,6 @@ struct NewProjectView: View {
                     errorText = error.localizedDescription
                 }
             }
-        }
     }
 
     private var defaultName: String {
@@ -145,7 +152,6 @@ struct NewProjectView: View {
                 store.save(project)
                 try? FileManager.default.removeItem(at: source)
                 running = false
-                dismiss()
                 onCreated(id)
             } catch {
                 try? FileManager.default.removeItem(at: dir)
